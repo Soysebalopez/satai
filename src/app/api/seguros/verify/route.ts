@@ -236,7 +236,10 @@ export async function POST(request: NextRequest) {
           : "Comparacion de NDVI pre/post evento. Reduccion indica perdida de cobertura vegetal.",
       },
       summary,
-      disclaimer: "Este reporte se basa en observaciones satelitales Sentinel-2. No reemplaza una inspeccion presencial ni constituye un peritaje oficial.",
+      warnings: warnings.length > 0 ? warnings : undefined,
+      disclaimer: eventType === "inundacion" && !damage.waterDetected
+        ? "LIMITACION: Sentinel-2 (sensor optico) no puede ver a traves de nubes. Durante inundaciones, la cobertura nubosa frecuentemente impide la captura de imagenes. Ademas, el agua turbia urbana tiene respuesta espectral diferente al agua limpia. Para verificacion confiable de inundaciones se recomienda complementar con datos Sentinel-1 SAR (radar). Este reporte NO es concluyente para eventos de inundacion."
+        : "Este reporte se basa en observaciones satelitales Sentinel-2. No reemplaza una inspeccion presencial ni constituye un peritaje oficial.",
     });
   } catch (error) {
     console.error("Seguros verify error:", error);
