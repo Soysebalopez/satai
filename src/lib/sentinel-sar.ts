@@ -32,15 +32,15 @@ function evaluatePixel(s) {
   return [enc, 255];
 }`;
 
-/** Visual: water in blue, land in grayscale */
+/** Visual: confirmed water in blue, possible water in light blue, land in grayscale */
 const SAR_FLOOD_VISUAL = `//VERSION=3
 function setup() { return { input: ["VV", "dataMask"], output: { bands: 3 } }; }
 function evaluatePixel(s) {
   if (s.dataMask === 0) return [0, 0, 0];
   let vv = s.VV;
-  if (vv < 0.03) return [0.05, 0.1, 0.6];
-  if (vv < 0.06) return [0.15, 0.25, 0.55];
-  if (vv < 0.1)  return [0.35, 0.4, 0.45];
+  if (vv < 0.012) return [0.05, 0.1, 0.7];
+  if (vv < 0.025) return [0.2, 0.3, 0.55];
+  if (vv < 0.06)  return [0.4, 0.45, 0.5];
   return [Math.min(1, 3*vv), Math.min(1, 3*vv), Math.min(1, 3*vv)];
 }`;
 
@@ -80,14 +80,15 @@ export async function analyzeSARFlood(
   ]);
 
   const waterIncrease = after.waterPercent - before.waterPercent;
-  const floodDetected = waterIncrease > 2 || after.waterPercent > 15;
+  // With strict threshold (~-19 dB), baseline is ~0.2%, flood is 5-15%+
+  const floodDetected = waterIncrease > 2 || (after.waterPercent > 3 && waterIncrease > 1);
 
   let damagePercent = 0;
-  if (waterIncrease > 25) damagePercent = 90;
-  else if (waterIncrease > 15) damagePercent = 70;
-  else if (waterIncrease > 8) damagePercent = 50;
-  else if (waterIncrease > 4) damagePercent = 30;
-  else if (waterIncrease > 2) damagePercent = 15;
+  if (waterIncrease > 15) damagePercent = 90;
+  else if (waterIncrease > 10) damagePercent = 70;
+  else if (waterIncrease > 6) damagePercent = 50;
+  else if (waterIncrease > 3) damagePercent = 30;
+  else if (waterIncrease > 1.5) damagePercent = 15;
   else if (floodDetected) damagePercent = 10;
 
   let severity: SARFloodResult["severity"];
@@ -143,7 +144,7 @@ async function fetchSARStats(
     const alpha = ch >= 2 ? data[i + ch - 1] : 255;
     if (alpha === 0) continue;
     total++;
-    if (data[i] < 38) water++; // VV < 0.03 linear = water
+    if (data[i] < 15) water++; // VV < 0.012 linear (~-19 dB) = confirmed water
   }
 
   return {
