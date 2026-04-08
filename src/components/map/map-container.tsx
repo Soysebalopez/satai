@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import { BAHIA_BLANCA, getAirLevel, AIR_LEVEL_COLORS } from "@/lib/constants";
 import { LayerToggles, type LayerKey } from "./layer-toggles";
+import { DataPanel } from "./data-panel";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
@@ -338,100 +339,20 @@ export function MapContainer() {
       </div>
 
       {/* Data panel */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-3 max-w-xs">
-        {/* AI Summary */}
-        <div className="rounded-xl border border-earth-deep bg-white/90 backdrop-blur-sm p-4 shadow-sm">
-          <p className="text-[10px] font-mono tracking-wider uppercase text-teal-deep mb-2">
-            Resumen ciudadano
-          </p>
-          {aiSummary ? (
-            <p className="text-xs text-ink-light leading-relaxed">{aiSummary}</p>
-          ) : (
-            <div className="space-y-1.5">
-              <div className="h-3 w-full rounded bg-earth-deep/20 animate-pulse" />
-              <div className="h-3 w-3/4 rounded bg-earth-deep/20 animate-pulse" />
-            </div>
-          )}
-        </div>
-
-        {/* Satellite interpretation */}
-        {(layers.satellite || layers.ndvi || layers.moisture) && (
-          <div className="rounded-xl border border-ink/10 bg-white/90 backdrop-blur-sm p-4 shadow-sm">
-            <p className="text-[10px] font-mono tracking-wider uppercase text-ink-muted mb-2">
-              {layers.satellite ? "Imagen satelital" : layers.ndvi ? "Vegetacion (NDVI)" : "Humedad del suelo"}
-            </p>
-            {satLoading ? (
-              <div className="space-y-1.5">
-                <div className="h-3 w-full rounded bg-earth-deep/20 animate-pulse" />
-                <div className="h-3 w-2/3 rounded bg-earth-deep/20 animate-pulse" />
-              </div>
-            ) : satInterpretation ? (
-              <p className="text-xs text-ink-light leading-relaxed">{satInterpretation}</p>
-            ) : (
-              <p className="text-xs text-slate-warm italic">Cargando imagen Sentinel-2...</p>
-            )}
-            <p className="text-[9px] text-slate-warm/60 mt-2 font-mono">Sentinel-2 L2A / ESA Copernicus</p>
-          </div>
-        )}
-
-        {/* Air quality */}
-        <div className="rounded-xl border border-earth-deep bg-white/90 backdrop-blur-sm p-4 shadow-sm">
-          <p className="text-[10px] font-mono tracking-wider uppercase text-ink-muted mb-2">
-            Calidad del aire
-          </p>
-          {loading ? (
-            <div className="h-4 w-32 rounded bg-earth-deep/30 animate-pulse" />
-          ) : air?.summary ? (
-            <div className="space-y-1">
-              {Object.entries(air.summary).slice(0, 4).map(([key, val]) => (
-                <div key={key} className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-ink-muted">{key}</span>
-                  <span className="font-mono text-ink-light">
-                    {val.value} <span className="text-slate-warm">{val.unit}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-slate-warm">Sin datos disponibles</p>
-          )}
-        </div>
-
-        {/* Wind */}
-        <div className="rounded-xl border border-earth-deep bg-white/90 backdrop-blur-sm p-4 shadow-sm">
-          <p className="text-[10px] font-mono tracking-wider uppercase text-ink-muted mb-2">
-            Viento
-          </p>
-          {loading ? (
-            <div className="h-4 w-32 rounded bg-earth-deep/30 animate-pulse" />
-          ) : wind?.current ? (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-[#3b82f6]" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2"
-                  style={{ transform: `rotate(${wind.current.windDirection + 180}deg)` }}>
-                  <path d="M12 2l0 20M12 2l-4 4M12 2l4 4" />
-                </svg>
-                <span className="text-sm font-medium text-ink">{wind.current.windSpeed} km/h</span>
-                <span className="text-xs text-slate-warm">{wind.current.windDirectionLabelEs}</span>
-              </div>
-              <p className="text-xs text-ink-muted leading-relaxed">{wind.dispersion.description}</p>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-warm">Sin datos disponibles</p>
-          )}
-        </div>
-
-        {/* Fires */}
-        {fires && fires.count > 0 && (
-          <div className="rounded-xl border border-air-bad/30 bg-white/90 backdrop-blur-sm p-4 shadow-sm">
-            <p className="text-[10px] font-mono tracking-wider uppercase text-air-bad mb-2">
-              Incendios activos
-            </p>
-            <p className="text-xs text-ink-muted">{fires.summary.description}</p>
-          </div>
-        )}
-      </div>
+      <DataPanel
+        air={air}
+        wind={wind}
+        fires={fires}
+        aiSummary={aiSummary}
+        satInterpretation={satInterpretation}
+        satLayerName={
+          layers.satellite ? "Imagen satelital" :
+          layers.ndvi ? "Vegetacion (NDVI)" :
+          layers.moisture ? "Humedad del suelo" : null
+        }
+        satLoading={satLoading}
+        loading={loading}
+      />
 
       {loading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-earth/80 backdrop-blur-sm">
