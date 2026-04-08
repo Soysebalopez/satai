@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# whitebay / claude
+.mcp.json
+.mcp.json.backup
+.claude/
+.whitebay.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
