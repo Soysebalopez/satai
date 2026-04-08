@@ -38,8 +38,8 @@ function setup() { return { input: ["VV", "dataMask"], output: { bands: 3 } }; }
 function evaluatePixel(s) {
   if (s.dataMask === 0) return [0, 0, 0];
   let vv = s.VV;
-  if (vv < 0.012) return [0.05, 0.1, 0.7];
-  if (vv < 0.025) return [0.2, 0.3, 0.55];
+  if (vv < 0.016) return [0.05, 0.1, 0.7];
+  if (vv < 0.03)  return [0.2, 0.3, 0.55];
   if (vv < 0.06)  return [0.4, 0.45, 0.5];
   return [Math.min(1, 3*vv), Math.min(1, 3*vv), Math.min(1, 3*vv)];
 }`;
@@ -144,7 +144,7 @@ async function fetchSARStats(
     const alpha = ch >= 2 ? data[i + ch - 1] : 255;
     if (alpha === 0) continue;
     total++;
-    if (data[i] < 15) water++; // VV < 0.012 linear (~-19 dB) = confirmed water
+    if (data[i] < 20) water++; // VV < 0.016 linear (~-18 dB) = confirmed water
   }
 
   return {
