@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import sharp from "sharp";
 
 /**
  * GET /api/agro/ndvi?bbox=-62.3,-38.8,-62.2,-38.7&weeks=2
@@ -30,18 +31,22 @@ async function getToken(): Promise<string> {
   return cachedToken.token;
 }
 
-// Evalscript that outputs NDVI as a single float value
-const NDVI_STATS_EVALSCRIPT = `//VERSION=3
+// Evalscript that encodes NDVI as a grayscale PNG (0-255 maps to NDVI -1 to +1)
+// Value 128 = NDVI 0, Value 255 = NDVI 1, Value 0 = NDVI -1
+// Alpha channel: 255 = valid pixel, 0 = no data
+const NDVI_ENCODED_EVALSCRIPT = `//VERSION=3
 function setup() {
   return {
     input: ["B04", "B08", "dataMask"],
-    output: { bands: 1, sampleType: "FLOAT32" }
+    output: { bands: 2, sampleType: "UINT8" }
   };
 }
 function evaluatePixel(sample) {
-  if (sample.dataMask === 0) return [-9999];
+  if (sample.dataMask === 0) return [0, 0];
   let ndvi = (sample.B08 - sample.B04) / (sample.B08 + sample.B04);
-  return [ndvi];
+  let encoded = Math.round((ndvi + 1) * 127.5);
+  encoded = Math.max(0, Math.min(255, encoded));
+  return [encoded, 255];
 }`;
 
 // Evalscript for NDVI color image
@@ -142,7 +147,6 @@ async function fetchNDVIStats(token: string, bbox: [number, number, number, numb
   }
   periods.reverse();
 
-  // Fetch NDVI images for each period and calculate mean from pixel values
   const results = await Promise.all(
     periods.map(async (period) => {
       try {
@@ -168,45 +172,52 @@ async function fetchNDVIStats(token: string, bbox: [number, number, number, numb
             },
             output: {
               width: 64, height: 64,
-              responses: [{ identifier: "default", format: { type: "image/tiff" } }],
+              responses: [{ identifier: "default", format: { type: "image/png" } }],
             },
-            evalscript: NDVI_STATS_EVALSCRIPT,
+            evalscript: NDVI_ENCODED_EVALSCRIPT,
           }),
         });
 
         if (!res.ok) return { ...period, ndviMean: null };
 
-        // Parse TIFF as raw float32 values and calculate mean
-        const buffer = await res.arrayBuffer();
-        const view = new DataView(buffer);
-        let sum = 0, count = 0;
+        // Parse PNG with sharp — 2-channel (gray + alpha)
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const { data, info } = await sharp(buffer)
+          .raw()
+          .toBuffer({ resolveWithObject: true });
 
-        // Simple approach: scan for float32 values in valid NDVI range
-        // TIFF header is variable, but values start after header
-        for (let i = 8; i < buffer.byteLength - 3; i += 4) {
-          try {
-            const val = view.getFloat32(i, true);
-            if (val > -1 && val < 1 && val !== -9999) {
-              sum += val;
-              count++;
-            }
-          } catch { break; }
+        let sum = 0, count = 0;
+        const channels = info.channels; // 2 (gray + alpha) or 4 (RGBA)
+
+        for (let i = 0; i < data.length; i += channels) {
+          const encodedNdvi = data[i]; // gray channel
+          const alpha = channels >= 2 ? data[i + (channels - 1)] : 255;
+
+          // Skip no-data pixels (alpha = 0)
+          if (alpha === 0) continue;
+
+          // Decode: encoded = (NDVI + 1) * 127.5, so NDVI = encoded / 127.5 - 1
+          const ndvi = encodedNdvi / 127.5 - 1;
+          sum += ndvi;
+          count++;
         }
 
         const mean = count > 0 ? Math.round((sum / count) * 1000) / 1000 : null;
         return { ...period, ndviMean: mean };
-      } catch {
+      } catch (err) {
+        console.error("NDVI stats fetch error:", err);
         return { ...period, ndviMean: null };
       }
     })
   );
 
-  // Calculate changes
+  // Calculate changes — only when both values are meaningful
   const withChanges = results.map((r, i) => {
     const prev = i > 0 ? results[i - 1].ndviMean : null;
-    const change = r.ndviMean !== null && prev !== null
-      ? Math.round(((r.ndviMean - prev) / prev) * 1000) / 10
-      : null;
+    const change =
+      r.ndviMean !== null && prev !== null && Math.abs(prev) > 0.05
+        ? Math.round(((r.ndviMean - prev) / Math.abs(prev)) * 1000) / 10
+        : null;
 
     let status: "ok" | "warning" | "alert" = "ok";
     if (change !== null) {
