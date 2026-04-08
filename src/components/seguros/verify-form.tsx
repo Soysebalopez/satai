@@ -12,15 +12,17 @@ type EventType = "granizo" | "sequia" | "inundacion" | "helada";
 
 interface VerifyResult {
   verification: { fieldName: string; eventType: string; eventDate: string; dataSource: string; verifiedAt: string };
-  before: { period: { from: string; to: string }; ndviMean: number | null; imageUrl: string };
-  after: { period: { from: string; to: string }; ndviMean: number | null; imageUrl: string };
+  before: { period: { from: string; to: string }; indexMean: number | null; indexName: string; imageUrl: string };
+  after: { period: { from: string; to: string }; indexMean: number | null; indexName: string; imageUrl: string };
   damage: {
-    ndviChange: number | null;
+    indexChange: number | null;
     damagePercent: number | null;
     affectedHa: number | null;
     totalHa: number;
     severity: string;
     consistent: boolean | null;
+    waterDetected?: boolean;
+    methodology?: string;
   };
   summary: string;
   disclaimer: string;
@@ -282,9 +284,9 @@ export function VerifyForm() {
                 className="w-full rounded-lg border border-earth-deep/50"
               />
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs text-ink-muted">NDVI promedio</span>
+                <span className="text-xs text-ink-muted">{result.before.indexName} promedio</span>
                 <span className="text-lg font-semibold font-mono text-ink">
-                  {result.before.ndviMean?.toFixed(3) ?? "—"}
+                  {result.before.indexMean?.toFixed(3) ?? "—"}
                 </span>
               </div>
             </div>
@@ -306,9 +308,9 @@ export function VerifyForm() {
                 className="w-full rounded-lg border border-earth-deep/50"
               />
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs text-ink-muted">NDVI promedio</span>
+                <span className="text-xs text-ink-muted">{result.before.indexName} promedio</span>
                 <span className="text-lg font-semibold font-mono text-ink">
-                  {result.after.ndviMean?.toFixed(3) ?? "—"}
+                  {result.after.indexMean?.toFixed(3) ?? "—"}
                 </span>
               </div>
             </div>
@@ -319,10 +321,10 @@ export function VerifyForm() {
             <h3 className="text-sm font-semibold text-ink mb-4">Metricas de daño</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
-                <p className="text-[10px] font-mono text-slate-warm mb-1">Cambio NDVI</p>
+                <p className="text-[10px] font-mono text-slate-warm mb-1">Cambio {result.before.indexName}</p>
                 <p className="text-xl font-semibold font-mono text-ink">
-                  {result.damage.ndviChange !== null
-                    ? (result.damage.ndviChange > 0 ? "+" : "") + result.damage.ndviChange.toFixed(3)
+                  {result.damage.indexChange !== null
+                    ? (result.damage.indexChange > 0 ? "+" : "") + result.damage.indexChange.toFixed(3)
                     : "—"}
                 </p>
               </div>
