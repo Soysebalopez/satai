@@ -77,6 +77,7 @@ export function MapContainer() {
   const [loading, setLoading] = useState(true);
   const [satInterpretation, setSatInterpretation] = useState<string | null>(null);
   const [satLoading, setSatLoading] = useState(false);
+  const [fireAlert, setFireAlert] = useState<{ message: string; level: string } | null>(null);
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     air: true, wind: true, fires: true,
     satellite: false, ndvi: false, moisture: false,
@@ -116,6 +117,25 @@ export function MapContainer() {
         .then((r) => r.json())
         .then((data) => { if (data.summary) setAiSummary(data.summary); })
         .catch(() => {});
+
+      // Auto-simulate dispersion if fires detected
+      if (firesRes?.count > 0) {
+        fetch("/api/fires/simulate")
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.simulations?.length > 0) {
+              const topAlert = data.simulations.find((s: { alert: { level: string } }) => s.alert.level === "high")
+                || data.simulations[0];
+              setFireAlert({
+                message: data.interpretation || topAlert.alert.message,
+                level: topAlert.alert.level,
+              });
+              // Draw plumes on map
+              drawFirePlumes(data.simulations);
+            }
+          })
+          .catch(() => {});
+      }
     }
     fetchData();
   }, []);
@@ -145,6 +165,47 @@ export function MapContainer() {
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
   }, []);
+
+  // Draw fire dispersion plumes on the map
+  function drawFirePlumes(simulations: Array<{ simulation: { plumes: Array<{ level: string; color: string; opacity: number; polygon: [number, number][] }> } }>) {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const addPlumes = () => {
+      simulations.forEach((sim, fireIdx) => {
+        sim.simulation.plumes.forEach((plume, plumeIdx) => {
+          const id = `fire-plume-${fireIdx}-${plumeIdx}`;
+          if (map.getSource(id)) return;
+
+          map.addSource(id, {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: { type: "Polygon", coordinates: [plume.polygon] },
+            },
+          });
+
+          map.addLayer({
+            id,
+            type: "fill",
+            source: id,
+            paint: { "fill-color": plume.color, "fill-opacity": plume.opacity * 0.7 },
+          });
+
+          map.addLayer({
+            id: `${id}-line`,
+            type: "line",
+            source: id,
+            paint: { "line-color": plume.color, "line-width": 1, "line-opacity": plume.opacity, "line-dasharray": [2, 2] },
+          });
+        });
+      });
+    };
+
+    if (map.isStyleLoaded()) addPlumes();
+    else map.once("style.load", addPlumes);
+  }
 
   // Clear markers for a given layer
   function clearLayerMarkers(layerName: string) {
@@ -352,6 +413,7 @@ export function MapContainer() {
         }
         satLoading={satLoading}
         loading={loading}
+        fireAlert={fireAlert}
       />
 
       {loading && (

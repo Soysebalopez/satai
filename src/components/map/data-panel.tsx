@@ -31,6 +31,7 @@ interface DataPanelProps {
   satLayerName: string | null;
   satLoading: boolean;
   loading: boolean;
+  fireAlert?: { message: string; level: string } | null;
 }
 
 function CollapsibleCard({
@@ -82,9 +83,31 @@ export function DataPanel({
   satLayerName,
   satLoading,
   loading,
+  fireAlert,
 }: DataPanelProps) {
   return (
     <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-72 max-h-[calc(100dvh-80px)] overflow-y-auto scrollbar-hide">
+      {/* Fire dispersion alert */}
+      {fireAlert && (
+        <div
+          className="rounded-xl border bg-white/90 backdrop-blur-sm p-4 shadow-sm"
+          style={{
+            borderColor: fireAlert.level === "high" ? "rgba(239,68,68,0.3)" : "rgba(249,115,22,0.3)",
+          }}
+        >
+          <p
+            className="text-[10px] font-mono tracking-wider uppercase mb-2"
+            style={{ color: fireAlert.level === "high" ? "#ef4444" : "#f97316" }}
+          >
+            Simulacion de dispersion
+          </p>
+          <p className="text-xs text-ink-light leading-relaxed">{fireAlert.message}</p>
+          <p className="text-[9px] text-slate-warm/60 mt-2 font-mono">
+            SIMULACION basada en datos satelitales
+          </p>
+        </div>
+      )}
+
       {/* AI Summary */}
       <CollapsibleCard title="Resumen ciudadano" accent="var(--color-teal-deep)">
         {aiSummary ? (
