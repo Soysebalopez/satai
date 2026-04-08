@@ -22,17 +22,25 @@ const ZONE_META: Record<string, { title: string; description: string }> = {
     title: "Villa Mitre",
     description: "Monitoreo ambiental en Villa Mitre, Bahia Blanca. Calidad del aire y dispersion de emisiones.",
   },
-  "barrio-noroeste": {
-    title: "Barrio Noroeste",
-    description: "Calidad del aire en Barrio Noroeste, Bahia Blanca. Datos satelitales actualizados.",
+  noroeste: {
+    title: "Noroeste",
+    description: "Calidad del aire en Noroeste, Bahia Blanca. Datos satelitales actualizados.",
   },
-  grunbein: {
-    title: "Grunbein",
-    description: "Monitoreo ambiental en Grunbein, cercano al polo petroquimico de Bahia Blanca.",
+  palihue: {
+    title: "Palihue",
+    description: "Monitoreo ambiental en Palihue, Bahia Blanca. Zona residencial este.",
   },
-  bahia: {
-    title: "Estuario de la Bahia",
-    description: "Monitoreo del estuario y humedales de Bahia Blanca. Calidad del agua y aire.",
+  "villa-floresta": {
+    title: "Villa Floresta",
+    description: "Monitoreo ambiental en Villa Floresta, cercano al polo petroquimico de Bahia Blanca.",
+  },
+  grumbein: {
+    title: "Grünbein",
+    description: "Monitoreo ambiental en Grünbein, cercano al polo petroquimico de Bahia Blanca.",
+  },
+  universitario: {
+    title: "Universitario",
+    description: "Calidad del aire en zona Universitario, Bahia Blanca. Campus UNS y alrededores.",
   },
 };
 

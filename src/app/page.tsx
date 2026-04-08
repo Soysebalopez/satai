@@ -39,7 +39,7 @@ export default function Home() {
                   <a href="/barrio/ingeniero-white" className="text-xs text-ink-muted hover:text-ink transition-colors">Ingeniero White</a>
                   <a href="/barrio/centro" className="text-xs text-ink-muted hover:text-ink transition-colors">Centro</a>
                   <a href="/barrio/villa-mitre" className="text-xs text-ink-muted hover:text-ink transition-colors">Villa Mitre</a>
-                  <a href="/barrio/grunbein" className="text-xs text-ink-muted hover:text-ink transition-colors">Grunbein</a>
+                  <a href="/barrio/grumbein" className="text-xs text-ink-muted hover:text-ink transition-colors">Grünbein</a>
                 </div>
               </div>
               <div>

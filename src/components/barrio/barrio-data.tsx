@@ -174,10 +174,10 @@ export function BarrioData({ zone }: { zone: Zone }) {
       <div className="border-t border-earth-deep/30 pt-6 mt-8">
         <p className="text-xs text-ink-muted mb-3">Otros barrios</p>
         <div className="flex flex-wrap gap-2">
-          {["ingeniero-white", "centro", "villa-mitre", "barrio-noroeste", "grunbein", "bahia"]
+          {["ingeniero-white", "centro", "villa-mitre", "noroeste", "palihue", "villa-floresta", "grumbein", "universitario"]
             .filter((id) => id !== zone.id)
             .map((id) => {
-              const z = { "ingeniero-white": "Ing. White", centro: "Centro", "villa-mitre": "Villa Mitre", "barrio-noroeste": "B. Noroeste", grunbein: "Grunbein", bahia: "Bahia" }[id];
+              const z = { "ingeniero-white": "Ing. White", centro: "Centro", "villa-mitre": "Villa Mitre", noroeste: "Noroeste", palihue: "Palihue", "villa-floresta": "V. Floresta", grumbein: "Grünbein", universitario: "Universitario" }[id];
               return (
                 <a key={id} href={`/barrio/${id}`}
                   className="rounded-lg border border-earth-deep bg-white/40 px-3 py-1.5 text-xs text-ink-muted hover:border-teal/30 hover:text-ink transition-colors">

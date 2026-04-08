@@ -51,10 +51,10 @@ const BB_ZONES = [
   { name: "Ingeniero White", lat: -38.7826, lng: -62.2614 },
   { name: "Centro", lat: -38.7196, lng: -62.2724 },
   { name: "Villa Mitre", lat: -38.7050, lng: -62.2900 },
-  { name: "Barrio Noroeste", lat: -38.6950, lng: -62.2800 },
-  { name: "Grunbein", lat: -38.7600, lng: -62.3100 },
-  { name: "Barrio Universitario", lat: -38.7100, lng: -62.2500 },
-  { name: "Palihue", lat: -38.7250, lng: -62.3050 },
+  { name: "Noroeste", lat: -38.7350, lng: -62.3050 },
+  { name: "Grünbein", lat: -38.7550, lng: -62.2950 },
+  { name: "Universitario", lat: -38.7100, lng: -62.2500 },
+  { name: "Palihue", lat: -38.7250, lng: -62.2450 },
   { name: "Villa Floresta", lat: -38.7350, lng: -62.3200 },
 ];
 

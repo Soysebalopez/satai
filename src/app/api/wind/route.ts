@@ -121,11 +121,11 @@ function estimateDispersion(windDirDeg: number, windSpeed: number) {
   // Wind direction = FROM where the wind blows
   // If wind is from S/SSW (160-210°), emissions go north toward the city
   if (dir >= 160 && dir <= 230) {
-    affectedAreas.push("Villa Mitre", "Barrio Noroeste", "Centro");
+    affectedAreas.push("Villa Mitre", "Noroeste", "Centro");
   } else if (dir >= 130 && dir < 160) {
-    affectedAreas.push("Barrio Universitario", "Palihue");
+    affectedAreas.push("Universitario", "Palihue");
   } else if (dir > 230 && dir <= 270) {
-    affectedAreas.push("Barrio Napostá", "Villa Floresta");
+    affectedAreas.push("Villa Floresta", "Noroeste");
   } else if (dir >= 270 && dir <= 340) {
     affectedAreas.push("Ingeniero White", "Grünbein");
   } else {
