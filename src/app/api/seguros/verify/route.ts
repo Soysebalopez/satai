@@ -112,7 +112,7 @@ const EVENT_CONFIG: Record<EventType, {
   granizo: { beforeDays: 14, afterDays: 14, index: "ndvi", evalscript: NDVI_ENCODED, visualScript: NDVI_VISUAL, indexLabel: "NDVI" },
   sequia: { beforeDays: 28, afterDays: 28, index: "ndvi", evalscript: NDVI_ENCODED, visualScript: NDVI_VISUAL, indexLabel: "NDVI" },
   helada: { beforeDays: 14, afterDays: 14, index: "ndvi", evalscript: NDVI_ENCODED, visualScript: NDVI_VISUAL, indexLabel: "NDVI" },
-  inundacion: { beforeDays: 14, afterDays: 10, index: "ndwi", evalscript: NDWI_ENCODED, visualScript: FLOOD_VISUAL, indexLabel: "NDWI" },
+  inundacion: { beforeDays: 14, afterDays: 5, index: "ndwi", evalscript: NDWI_ENCODED, visualScript: FLOOD_VISUAL, indexLabel: "NDWI" },
 };
 
 export async function POST(request: NextRequest) {
@@ -142,14 +142,44 @@ export async function POST(request: NextRequest) {
     const afterFrom = new Date(event.getTime() + 1 * 86400000);
     const afterTo = new Date(event.getTime() + config.afterDays * 86400000);
 
-    // Fetch index stats (NDVI or NDWI depending on event type)
+    // Calculate area for warnings
+    const avgLat = (bbox[1] + bbox[3]) / 2;
+    const widthKm = (bbox[2] - bbox[0]) * 111.32 * Math.cos((avgLat * Math.PI) / 180);
+    const heightKm = (bbox[3] - bbox[1]) * 111.32;
+    const totalHa = Math.round(widthKm * heightKm * 100);
+
+    const warnings: string[] = [];
+    if (totalHa < 20) {
+      warnings.push(`Area muy pequena (${totalHa} ha). Sentinel-2 tiene resolucion de 10m/pixel. Para inundaciones urbanas se recomienda un area de al menos 50 ha.`);
+    }
+
+    // Fetch primary index (NDVI or NDWI)
     const [indexBefore, indexAfter] = await Promise.all([
       fetchIndexMean(token, bbox, beforeFrom, beforeTo, config.evalscript),
       fetchIndexMean(token, bbox, afterFrom, afterTo, config.evalscript),
     ]);
 
-    // Calculate damage — logic differs per event type
-    const damage = calculateDamage(indexBefore.mean, indexAfter.mean, eventType, bbox, config.index);
+    // For inundaciones: also check NDVI drop as secondary evidence
+    // Flooded vegetation has NDVI near 0 or negative
+    let ndviBefore: { mean: number | null; validPixels: number } | null = null;
+    let ndviAfter: { mean: number | null; validPixels: number } | null = null;
+    if (eventType === "inundacion") {
+      [ndviBefore, ndviAfter] = await Promise.all([
+        fetchIndexMean(token, bbox, beforeFrom, beforeTo, NDVI_ENCODED),
+        fetchIndexMean(token, bbox, afterFrom, afterTo, NDVI_ENCODED),
+      ]);
+    }
+
+    // Calculate damage — uses water pixel % for floods
+    const damage = calculateDamage(
+      indexBefore.mean, indexAfter.mean, eventType, bbox, config.index,
+      ndviBefore?.mean, ndviAfter?.mean,
+      indexBefore.waterPixelPercent, indexAfter.waterPixelPercent,
+    );
+
+    if (eventType === "inundacion" && !damage.consistentWithEvent && totalHa < 20) {
+      warnings.push("La deteccion puede ser imprecisa en zonas urbanas pequenas. Se recomienda ampliar el area de analisis o complementar con imagenes de radar SAR (Sentinel-1).");
+    }
 
     const summary = await generateVerification({
       fieldName: fieldName || "Campo declarado",
@@ -161,6 +191,7 @@ export async function POST(request: NextRequest) {
       damagePercent: damage.damagePercent,
       affectedHa: damage.affectedHa,
       waterDetected: damage.waterDetected,
+      warnings,
     });
 
     return NextResponse.json({
@@ -179,6 +210,7 @@ export async function POST(request: NextRequest) {
         indexMean: indexBefore.mean,
         indexName: config.indexLabel,
         validPixels: indexBefore.validPixels,
+        waterPixelPercent: indexBefore.waterPixelPercent,
         imageUrl: `/api/seguros/verify/image?bbox=${bbox.join(",")}&from=${formatDate(beforeFrom)}&to=${formatDate(beforeTo)}&type=${eventType}`,
       },
       after: {
@@ -186,6 +218,7 @@ export async function POST(request: NextRequest) {
         indexMean: indexAfter.mean,
         indexName: config.indexLabel,
         validPixels: indexAfter.validPixels,
+        waterPixelPercent: indexAfter.waterPixelPercent,
         imageUrl: `/api/seguros/verify/image?bbox=${bbox.join(",")}&from=${formatDate(afterFrom)}&to=${formatDate(afterTo)}&type=${eventType}`,
       },
       damage: {
@@ -196,8 +229,10 @@ export async function POST(request: NextRequest) {
         severity: damage.severity,
         consistent: damage.consistentWithEvent,
         waterDetected: damage.waterDetected,
+        waterPixelsBefore: damage.waterPixelsBefore || 0,
+        waterPixelsAfter: damage.waterPixelsAfter || 0,
         methodology: eventType === "inundacion"
-          ? "Deteccion de agua via NDWI (Water Index). Incremento de NDWI indica presencia de agua superficial."
+          ? `Conteo de pixeles con agua (NDWI > 0.1): antes ${indexBefore.waterPixelPercent}%, despues ${indexAfter.waterPixelPercent}%. Complementado con analisis NDVI.`
           : "Comparacion de NDVI pre/post evento. Reduccion indica perdida de cobertura vegetal.",
       },
       summary,
@@ -215,7 +250,7 @@ async function fetchIndexMean(
   from: Date,
   to: Date,
   evalscript: string,
-): Promise<{ mean: number | null; validPixels: number }> {
+): Promise<{ mean: number | null; validPixels: number; waterPixelPercent: number }> {
   const res = await fetch(PROCESS_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -224,33 +259,35 @@ async function fetchIndexMean(
         bounds: { bbox, properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
         data: [{
           type: "sentinel-2-l2a",
-          dataFilter: { maxCloudCoverage: 60, timeRange: { from: from.toISOString(), to: to.toISOString() } },
+          dataFilter: { maxCloudCoverage: 80, timeRange: { from: from.toISOString(), to: to.toISOString() } },
         }],
       },
-      output: { width: 64, height: 64, responses: [{ identifier: "default", format: { type: "image/png" } }] },
+      output: { width: 128, height: 128, responses: [{ identifier: "default", format: { type: "image/png" } }] },
       evalscript,
     }),
   });
 
-  if (!res.ok) return { mean: null, validPixels: 0 };
+  if (!res.ok) return { mean: null, validPixels: 0, waterPixelPercent: 0 };
 
   const buffer = Buffer.from(await res.arrayBuffer());
   const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
   const channels = info.channels;
 
-  let sum = 0, count = 0;
+  let sum = 0, count = 0, waterPixels = 0;
   for (let i = 0; i < data.length; i += channels) {
     const alpha = channels >= 2 ? data[i + channels - 1] : 255;
     if (alpha === 0) continue;
-    // Decode: value / 127.5 - 1 gives range -1 to +1
     const decoded = data[i] / 127.5 - 1;
     sum += decoded;
     count++;
+    // Count water pixels: NDWI > 0.1 indicates water
+    if (decoded > 0.1) waterPixels++;
   }
 
   return {
     mean: count > 0 ? Math.round((sum / count) * 1000) / 1000 : null,
     validPixels: count,
+    waterPixelPercent: count > 0 ? Math.round((waterPixels / count) * 1000) / 10 : 0,
   };
 }
 
@@ -260,6 +297,10 @@ function calculateDamage(
   eventType: EventType,
   bbox: [number, number, number, number],
   indexType: "ndvi" | "ndwi",
+  ndviBefore?: number | null,
+  ndviAfter?: number | null,
+  waterPixelsBefore?: number,
+  waterPixelsAfter?: number,
 ) {
   const avgLat = (bbox[1] + bbox[3]) / 2;
   const widthKm = (bbox[2] - bbox[0]) * 111.32 * Math.cos((avgLat * Math.PI) / 180);
@@ -270,26 +311,39 @@ function calculateDamage(
     return {
       indexChange: null, damagePercent: null, affectedHa: null, totalHa,
       severity: "indeterminado" as const, consistentWithEvent: null, waterDetected: false,
+      waterPixelsBefore: waterPixelsBefore || 0,
+      waterPixelsAfter: waterPixelsAfter || 0,
     };
   }
 
   const indexChange = Math.round((indexAfter - indexBefore) * 1000) / 1000;
 
   if (eventType === "inundacion") {
-    // For floods: NDWI INCREASE means more water
-    // Before flood: NDWI typically -0.2 to 0.1 (vegetation/soil)
-    // During flood: NDWI > 0.3 (water)
-    const waterIncrease = indexAfter - indexBefore;
-    const waterDetected = indexAfter > 0.1 || waterIncrease > 0.15;
+    // PRIMARY METHOD: Count water pixels (NDWI > 0.1)
+    // This is much more reliable than mean NDWI for urban areas
+    const wpBefore = waterPixelsBefore || 0;
+    const wpAfter = waterPixelsAfter || 0;
+    const waterPixelIncrease = wpAfter - wpBefore;
 
-    // Damage is proportional to water increase
+    // SECONDARY: Check if NDVI dropped (flooded land has low NDVI)
+    const ndviDrop = (ndviBefore != null && ndviAfter != null)
+      ? ndviBefore - ndviAfter : 0;
+
+    // Water detected if: more water pixels after, OR significant NDVI drop
+    const waterDetected = waterPixelIncrease > 2 || wpAfter > 5 || ndviDrop > 0.1;
+
+    // Damage based on water pixel increase (most reliable signal)
     let damagePercent = 0;
-    if (waterIncrease > 0.4) damagePercent = 90;
-    else if (waterIncrease > 0.25) damagePercent = 70;
-    else if (waterIncrease > 0.15) damagePercent = 50;
-    else if (waterIncrease > 0.08) damagePercent = 30;
-    else if (waterDetected) damagePercent = 15;
+    if (waterPixelIncrease > 20) damagePercent = Math.min(95, waterPixelIncrease);
+    else if (waterPixelIncrease > 10) damagePercent = waterPixelIncrease * 1.5;
+    else if (waterPixelIncrease > 5) damagePercent = waterPixelIncrease * 2;
+    else if (wpAfter > 15) damagePercent = wpAfter * 0.8; // Absolute water presence
+    else if (wpAfter > 5) damagePercent = wpAfter;
+    else if (ndviDrop > 0.15) damagePercent = 30; // NDVI evidence only
+    else if (ndviDrop > 0.08) damagePercent = 15;
+    else if (waterDetected) damagePercent = 10;
 
+    damagePercent = Math.min(100, Math.max(0, damagePercent));
     const affectedHa = Math.round(totalHa * (damagePercent / 100));
 
     let severity: "ninguno" | "leve" | "moderado" | "severo" | "total";
@@ -307,6 +361,8 @@ function calculateDamage(
       severity,
       consistentWithEvent: waterDetected,
       waterDetected,
+      waterPixelsBefore: wpBefore,
+      waterPixelsAfter: wpAfter,
     };
   }
 
@@ -352,6 +408,7 @@ async function generateVerification(data: {
   damagePercent: number | null;
   affectedHa: number | null;
   waterDetected: boolean;
+  warnings?: string[];
 }): Promise<string> {
   const eventLabels: Record<string, string> = {
     granizo: "granizo", sequia: "sequia", inundacion: "inundacion", helada: "helada",
