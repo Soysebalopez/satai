@@ -4,148 +4,100 @@ import { BAHIA_BLANCA } from "@/lib/constants";
 /**
  * GET /api/air-quality
  *
- * Fetches air quality data from OpenAQ v3 API for stations near Bahía Blanca.
- * Returns latest measurements for NO2, SO2, CO, O3, PM2.5.
+ * Combines data from two sources:
+ * 1. Open-Meteo Air Quality (CAMS/Sentinel-5P derived) — always available
+ * 2. OpenAQ ground stations — when available near Bahía Blanca
+ *
+ * Returns a unified summary with the best available data.
  */
 
 const OPENAQ_BASE = "https://api.openaq.org/v3";
-
-interface OpenAQMeasurement {
-  parameter: { name: string; units: string };
-  value: number;
-  date: { utc: string; local: string };
-  coordinates: { latitude: number; longitude: number } | null;
-}
-
-interface OpenAQLocation {
-  id: number;
-  name: string;
-  locality: string | null;
-  coordinates: { latitude: number; longitude: number };
-  parameters: Array<{ name: string; units: string }>;
-}
+const AIR_QUALITY_BASE = "https://air-quality-api.open-meteo.com/v1/air-quality";
 
 export async function GET() {
   try {
-    // 1. Find stations near Bahía Blanca
-    const locationsRes = await fetch(
-      `${OPENAQ_BASE}/locations?coordinates=${BAHIA_BLANCA.center.lat},${BAHIA_BLANCA.center.lng}&radius=25000&limit=10`,
-      {
-        headers: { Accept: "application/json" },
-        next: { revalidate: 3600 }, // Cache 1 hour
-      }
-    );
+    // Fetch both sources in parallel
+    const [atmosphereData, groundData] = await Promise.all([
+      fetchAtmosphere(),
+      fetchOpenAQ(),
+    ]);
 
-    if (!locationsRes.ok) {
-      // If OpenAQ is down or no stations, return synthetic data for the area
-      return NextResponse.json({
-        source: "synthetic",
-        updated: new Date().toISOString(),
-        note: "OpenAQ no disponible — datos de ejemplo",
-        stations: [],
-        summary: getSyntheticSummary(),
-      });
-    }
-
-    const locationsData = await locationsRes.json();
-    const locations: OpenAQLocation[] = locationsData.results || [];
-
-    if (locations.length === 0) {
-      return NextResponse.json({
-        source: "synthetic",
-        updated: new Date().toISOString(),
-        note: "Sin estaciones cerca de Bahia Blanca — datos de ejemplo",
-        stations: [],
-        summary: getSyntheticSummary(),
-      });
-    }
-
-    // 2. Fetch latest measurements for each station
-    const stationsWithData = await Promise.all(
-      locations.slice(0, 5).map(async (loc) => {
-        try {
-          const measRes = await fetch(
-            `${OPENAQ_BASE}/locations/${loc.id}/latest`,
-            {
-              headers: { Accept: "application/json" },
-              next: { revalidate: 1800 },
-            }
-          );
-          const measData = measRes.ok ? await measRes.json() : { results: [] };
-          const measurements: OpenAQMeasurement[] = measData.results || [];
-
-          return {
-            id: loc.id,
-            name: loc.name,
-            locality: loc.locality,
-            coordinates: loc.coordinates,
-            measurements: measurements.map((m) => ({
-              parameter: m.parameter.name,
-              value: m.value,
-              unit: m.parameter.units,
-              updatedAt: m.date.utc,
-            })),
-          };
-        } catch {
-          return {
-            id: loc.id,
-            name: loc.name,
-            locality: loc.locality,
-            coordinates: loc.coordinates,
-            measurements: [],
-          };
-        }
-      })
-    );
+    // Atmosphere (CAMS) is the primary source — always available
+    const summary = atmosphereData || {};
 
     return NextResponse.json({
-      source: "openaq",
+      source: atmosphereData ? "cams-sentinel5p" : "synthetic",
+      groundStations: groundData.stations,
+      groundStationCount: groundData.stations.length,
       updated: new Date().toISOString(),
-      stations: stationsWithData,
-      summary: buildSummary(stationsWithData),
+      summary,
     });
   } catch (error) {
     console.error("Air quality API error:", error);
     return NextResponse.json({
-      source: "synthetic",
+      source: "error",
       updated: new Date().toISOString(),
-      note: "Error al consultar OpenAQ — datos de ejemplo",
-      stations: [],
-      summary: getSyntheticSummary(),
+      summary: {},
+      groundStations: [],
+      groundStationCount: 0,
     });
   }
 }
 
-function getSyntheticSummary() {
-  return {
-    NO2: { value: 32.4, unit: "µg/m³" },
-    SO2: { value: 8.7, unit: "µg/m³" },
-    PM25: { value: 18.2, unit: "µg/m³" },
-    O3: { value: 45.1, unit: "µg/m³" },
-  };
+async function fetchAtmosphere(): Promise<Record<string, { value: number; unit: string }> | null> {
+  try {
+    const params = new URLSearchParams({
+      latitude: String(BAHIA_BLANCA.center.lat),
+      longitude: String(BAHIA_BLANCA.center.lng),
+      current: "nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide,pm2_5,pm10",
+      timezone: "America/Argentina/Buenos_Aires",
+    });
+
+    const res = await fetch(`${AIR_QUALITY_BASE}?${params}`, {
+      next: { revalidate: 1800 },
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const c = data.current;
+
+    return {
+      NO2: { value: round(c.nitrogen_dioxide), unit: "ug/m3" },
+      SO2: { value: round(c.sulphur_dioxide), unit: "ug/m3" },
+      O3: { value: round(c.ozone), unit: "ug/m3" },
+      CO: { value: round(c.carbon_monoxide), unit: "ug/m3" },
+      PM25: { value: round(c.pm2_5), unit: "ug/m3" },
+      PM10: { value: round(c.pm10), unit: "ug/m3" },
+    };
+  } catch {
+    return null;
+  }
 }
 
-function buildSummary(
-  stations: Array<{
-    measurements: Array<{ parameter: string; value: number; unit: string }>;
-  }>
-) {
-  const all = stations.flatMap((s) => s.measurements);
-  const byParam: Record<string, { total: number; count: number; unit: string }> = {};
+async function fetchOpenAQ() {
+  try {
+    const res = await fetch(
+      `${OPENAQ_BASE}/locations?coordinates=${BAHIA_BLANCA.center.lat},${BAHIA_BLANCA.center.lng}&radius=25000&limit=5`,
+      { headers: { Accept: "application/json" }, next: { revalidate: 3600 } }
+    );
 
-  for (const m of all) {
-    const key = m.parameter.toUpperCase().replace(".", "");
-    if (!byParam[key]) byParam[key] = { total: 0, count: 0, unit: m.unit };
-    byParam[key].total += m.value;
-    byParam[key].count++;
-  }
+    if (!res.ok) return { stations: [] };
+    const data = await res.json();
+    const locations = data.results || [];
 
-  const summary: Record<string, { value: number; unit: string }> = {};
-  for (const [key, data] of Object.entries(byParam)) {
-    summary[key] = {
-      value: Math.round((data.total / data.count) * 10) / 10,
-      unit: data.unit,
+    return {
+      stations: locations.map((loc: { id: number; name: string; coordinates: { latitude: number; longitude: number } }) => ({
+        id: loc.id,
+        name: loc.name,
+        coordinates: loc.coordinates,
+      })),
     };
+  } catch {
+    return { stations: [] };
   }
-  return summary;
+}
+
+function round(n: number): number {
+  if (n == null || isNaN(n)) return 0;
+  return Math.round(n * 10) / 10;
 }
