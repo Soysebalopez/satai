@@ -5,6 +5,7 @@ import mapboxgl from "mapbox-gl";
 import { BAHIA_BLANCA, getAirLevel, AIR_LEVEL_COLORS } from "@/lib/constants";
 import { LayerToggles, type LayerKey } from "./layer-toggles";
 import { DataPanel } from "./data-panel";
+import { SimPanel } from "./sim-panel";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
@@ -78,6 +79,11 @@ export function MapContainer() {
   const [satInterpretation, setSatInterpretation] = useState<string | null>(null);
   const [satLoading, setSatLoading] = useState(false);
   const [fireAlert, setFireAlert] = useState<{ message: string; level: string } | null>(null);
+  const [simMode, setSimMode] = useState(false);
+  const [simSource, setSimSource] = useState<[number, number] | null>(null);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simResult, setSimResult] = useState<{ summary: string; affectedZones: Array<{ name: string; distanceKm: number; etaMinutes: number; concentrationLevel: string }> } | null>(null);
+  const simMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     air: true, wind: true, fires: true,
     satellite: false, ndvi: false, moisture: false,
@@ -165,6 +171,86 @@ export function MapContainer() {
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
   }, []);
+
+  // Simulation click handler
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const handler = (e: mapboxgl.MapMouseEvent) => {
+      if (!simMode) return;
+      const lngLat: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+      setSimSource(lngLat);
+      setSimResult(null);
+
+      if (simMarkerRef.current) {
+        simMarkerRef.current.setLngLat(lngLat);
+      } else {
+        simMarkerRef.current = new mapboxgl.Marker({ color: "#ef4444", scale: 0.8 })
+          .setLngLat(lngLat)
+          .addTo(map);
+      }
+    };
+
+    map.on("click", handler);
+    return () => { map.off("click", handler); };
+  }, [simMode]);
+
+  // Clean up sim mode
+  useEffect(() => {
+    if (!simMode) {
+      simMarkerRef.current?.remove();
+      simMarkerRef.current = null;
+      setSimSource(null);
+      setSimResult(null);
+      // Remove plume layers
+      const map = mapRef.current;
+      if (map) {
+        for (let i = 0; i < 9; i++) {
+          if (map.getLayer(`sim-plume-${i}-line`)) map.removeLayer(`sim-plume-${i}-line`);
+          if (map.getLayer(`sim-plume-${i}`)) map.removeLayer(`sim-plume-${i}`);
+          if (map.getSource(`sim-plume-${i}`)) map.removeSource(`sim-plume-${i}`);
+        }
+      }
+    }
+  }, [simMode]);
+
+  const handleSimulate = useCallback(async (eventType: string, duration: number) => {
+    if (!simSource) return;
+    setSimLoading(true);
+    try {
+      const res = await fetch("/api/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: simSource, eventType, durationMinutes: duration }),
+      });
+      const data = await res.json();
+      setSimResult(data.result);
+
+      // Draw plumes on map
+      const map = mapRef.current;
+      if (map && data.result?.plumes) {
+        // Clear previous
+        for (let i = 0; i < 9; i++) {
+          if (map.getLayer(`sim-plume-${i}-line`)) map.removeLayer(`sim-plume-${i}-line`);
+          if (map.getLayer(`sim-plume-${i}`)) map.removeLayer(`sim-plume-${i}`);
+          if (map.getSource(`sim-plume-${i}`)) map.removeSource(`sim-plume-${i}`);
+        }
+
+        const plumes = [...data.result.plumes].reverse();
+        plumes.forEach((plume: { polygon: [number, number][]; color: string; opacity: number }, i: number) => {
+          const id = `sim-plume-${i}`;
+          map.addSource(id, {
+            type: "geojson",
+            data: { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [plume.polygon] } },
+          });
+          map.addLayer({ id, type: "fill", source: id, paint: { "fill-color": plume.color, "fill-opacity": plume.opacity } });
+          map.addLayer({ id: `${id}-line`, type: "line", source: id, paint: { "line-color": plume.color, "line-width": 1, "line-opacity": plume.opacity + 0.2, "line-dasharray": [2, 2] } });
+        });
+      }
+    } catch {}
+    setSimLoading(false);
+  }, [simSource]);
 
   // Draw fire dispersion plumes on the map
   function drawFirePlumes(simulations: Array<{ simulation: { plumes: Array<{ level: string; color: string; opacity: number; polygon: [number, number][] }> } }>) {
@@ -394,9 +480,17 @@ export function MapContainer() {
     <div className="absolute inset-0">
       <div ref={containerRef} className="w-full h-full" />
 
-      {/* Layer toggles */}
-      <div className="absolute top-4 right-14 z-10">
+      {/* Layer toggles + sim button */}
+      <div className="absolute top-4 right-14 z-10 flex flex-col gap-2 items-end">
         <LayerToggles active={layers} onToggle={toggleLayer} />
+        <SimPanel
+          simMode={simMode}
+          onToggleMode={() => setSimMode(!simMode)}
+          simSource={simSource}
+          onSimulate={handleSimulate}
+          simLoading={simLoading}
+          simResult={simResult}
+        />
       </div>
 
       {/* Data panel */}

@@ -1,4 +1,5 @@
 import { MeshGradientBackground } from "@/components/landing/mesh-gradient";
+import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { Features } from "@/components/landing/features";
 import { Translation } from "@/components/landing/translation";
@@ -14,6 +15,7 @@ export default function Home() {
 
       {/* Content */}
       <div className="relative z-10">
+        <Navbar />
         <Hero />
         <Features />
         <Translation />
