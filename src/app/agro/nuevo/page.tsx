@@ -15,7 +15,7 @@ export default function NuevoCampoPage() {
         rel="stylesheet"
       />
       <link
-        href="https://api.mapbox.com/mapbox-gl-js/plugins/v1.4.3/mapbox-gl-draw.css"
+        href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css"
         rel="stylesheet"
       />
       <div className="min-h-[100dvh] bg-earth">

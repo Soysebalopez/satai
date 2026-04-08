@@ -32,36 +32,39 @@ export function FieldDrawMap({ onFieldCreated }: FieldDrawMapProps) {
       attributionControl: false,
     });
 
-    const draw = new MapboxDraw({
-      displayControlsDefault: false,
-      controls: { polygon: true, trash: true },
-      defaultMode: "draw_polygon",
-    });
-
-    map.addControl(draw, "top-left");
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
-    map.on("draw.create", (e: { features: GeoJSON.Feature[] }) => {
-      const feature = e.features[0];
-      if (feature.geometry.type === "Polygon") {
-        const coords = (feature.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
-        setPolygon(coords);
-      }
-    });
+    map.on("load", () => {
+      const draw = new MapboxDraw({
+        displayControlsDefault: false,
+        controls: { polygon: true, trash: true },
+        defaultMode: "simple_select",
+      });
 
-    map.on("draw.delete", () => setPolygon(null));
-    map.on("draw.update", (e: { features: GeoJSON.Feature[] }) => {
-      const feature = e.features[0];
-      if (feature.geometry.type === "Polygon") {
-        const coords = (feature.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
-        setPolygon(coords);
-      }
+      map.addControl(draw, "top-left");
+      drawRef.current = draw;
+
+      map.on("draw.create", (e: { features: GeoJSON.Feature[] }) => {
+        const feature = e.features[0];
+        if (feature.geometry.type === "Polygon") {
+          const coords = (feature.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
+          setPolygon(coords);
+        }
+      });
+
+      map.on("draw.delete", () => setPolygon(null));
+      map.on("draw.update", (e: { features: GeoJSON.Feature[] }) => {
+        const feature = e.features[0];
+        if (feature.geometry.type === "Polygon") {
+          const coords = (feature.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
+          setPolygon(coords);
+        }
+      });
     });
 
     mapRef.current = map;
-    drawRef.current = draw;
 
-    return () => { map.remove(); mapRef.current = null; };
+    return () => { map.remove(); mapRef.current = null; drawRef.current = null; };
   }, []);
 
   const handleSave = useCallback(() => {

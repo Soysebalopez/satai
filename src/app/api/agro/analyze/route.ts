@@ -55,6 +55,8 @@ function buildPrompt(data: AnalyzeRequest): string {
     "Sos un asistente tecnico para un ingeniero agronomo en la pampa humeda de Argentina.",
     "Analiza el estado de este campo y da un resumen accionable en 2-3 oraciones.",
     "Se directo y tecnico pero claro. Menciona si conviene hacer una visita presencial.",
+    "Si el NDVI es 0 o muy cercano a 0, considera que puede ser un error de datos (nubes, zona sin cobertura, o que el campo esta en barbecho). No alarmes innecesariamente.",
+    "Si no hay datos de la semana anterior, no hables de caidas porcentuales.",
     "Sin markdown. En espanol.",
     "",
     `Campo: ${data.fieldName} (${data.location})`,
@@ -77,15 +79,19 @@ function buildPrompt(data: AnalyzeRequest): string {
 }
 
 function buildTemplate(data: AnalyzeRequest): string {
-  const { ndviCurrent, ndviChange, precipitation7d, fieldName } = data;
+  const { ndviCurrent, ndviChange, ndviPrev, precipitation7d, fieldName } = data;
 
   if (ndviCurrent === null) {
     return `Sin datos satelitales recientes para ${fieldName}. Puede deberse a cobertura nubosa. Se reintentara con la proxima imagen disponible.`;
   }
 
+  if (ndviCurrent < 0.05) {
+    return `${fieldName}: NDVI cercano a cero (${ndviCurrent.toFixed(3)}). Esto puede indicar que el campo esta en barbecho, que la imagen tiene nubes, o que el poligono no cubre zona agricola. Verificar la ubicacion del campo en el mapa.`;
+  }
+
   const parts: string[] = [];
 
-  if (ndviChange !== null && ndviChange < -15) {
+  if (ndviChange !== null && ndviPrev !== null && ndviPrev > 0.05 && ndviChange < -15) {
     parts.push(
       `${fieldName}: caida significativa de NDVI (${ndviChange.toFixed(1)}%).`
     );
