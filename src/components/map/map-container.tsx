@@ -74,8 +74,11 @@ export function MapContainer() {
   const [air, setAir] = useState<AirData | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [satInterpretation, setSatInterpretation] = useState<string | null>(null);
+  const [satLoading, setSatLoading] = useState(false);
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     air: true, wind: true, fires: true,
+    satellite: false, ndvi: false, moisture: false,
   });
 
   const toggleLayer = useCallback((key: LayerKey) => {
@@ -255,6 +258,63 @@ export function MapContainer() {
     }
   }, [air, layers.air]);
 
+  // Satellite image overlay
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Determine which satellite layer is active (only one at a time)
+    const activeSatLayer = (["satellite", "ndvi", "moisture"] as const).find((k) => layers[k]);
+    const layerMap = { satellite: "trueColor", ndvi: "ndvi", moisture: "moisture" } as const;
+
+    // Remove existing satellite source/layer
+    if (map.getLayer("sentinel-overlay")) map.removeLayer("sentinel-overlay");
+    if (map.getSource("sentinel-source")) map.removeSource("sentinel-source");
+    setSatInterpretation(null);
+
+    if (!activeSatLayer) return;
+
+    const apiLayer = layerMap[activeSatLayer];
+    const imageUrl = `/api/satellite?layer=${apiLayer}&t=${Date.now()}`;
+    const bounds = BAHIA_BLANCA.bounds;
+
+    setSatLoading(true);
+
+    // Wait for map style to be loaded
+    const addLayer = () => {
+      if (map.getSource("sentinel-source")) return;
+      map.addSource("sentinel-source", {
+        type: "image",
+        url: imageUrl,
+        coordinates: [
+          [bounds.west, bounds.north],
+          [bounds.east, bounds.north],
+          [bounds.east, bounds.south],
+          [bounds.west, bounds.south],
+        ],
+      });
+      map.addLayer({
+        id: "sentinel-overlay",
+        type: "raster",
+        source: "sentinel-source",
+        paint: { "raster-opacity": 0.75 },
+      });
+      setSatLoading(false);
+
+      // Fetch interpretation
+      fetch(`/api/satellite/interpret?layer=${apiLayer}`)
+        .then((r) => r.json())
+        .then((data) => { if (data.interpretation) setSatInterpretation(data.interpretation); })
+        .catch(() => {});
+    };
+
+    if (map.isStyleLoaded()) {
+      addLayer();
+    } else {
+      map.once("style.load", addLayer);
+    }
+  }, [layers.satellite, layers.ndvi, layers.moisture]);
+
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="w-full h-full" />
@@ -280,6 +340,26 @@ export function MapContainer() {
             </div>
           )}
         </div>
+
+        {/* Satellite interpretation */}
+        {(layers.satellite || layers.ndvi || layers.moisture) && (
+          <div className="rounded-xl border border-ink/10 bg-white/90 backdrop-blur-sm p-4 shadow-sm">
+            <p className="text-[10px] font-mono tracking-wider uppercase text-ink-muted mb-2">
+              {layers.satellite ? "Imagen satelital" : layers.ndvi ? "Vegetacion (NDVI)" : "Humedad del suelo"}
+            </p>
+            {satLoading ? (
+              <div className="space-y-1.5">
+                <div className="h-3 w-full rounded bg-earth-deep/20 animate-pulse" />
+                <div className="h-3 w-2/3 rounded bg-earth-deep/20 animate-pulse" />
+              </div>
+            ) : satInterpretation ? (
+              <p className="text-xs text-ink-light leading-relaxed">{satInterpretation}</p>
+            ) : (
+              <p className="text-xs text-slate-warm italic">Cargando imagen Sentinel-2...</p>
+            )}
+            <p className="text-[9px] text-slate-warm/60 mt-2 font-mono">Sentinel-2 L2A / ESA Copernicus</p>
+          </div>
+        )}
 
         {/* Air quality */}
         <div className="rounded-xl border border-earth-deep bg-white/90 backdrop-blur-sm p-4 shadow-sm">
