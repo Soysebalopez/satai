@@ -22,7 +22,7 @@ export function LayerToggles({ active, onToggle }: LayerTogglesProps) {
   const groups = [...new Set(LAYERS.map((l) => l.group))];
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 rounded-xl bg-white/70 backdrop-blur-sm p-2 border border-earth-deep/50 shadow-sm">
       {groups.map((group) => (
         <div key={group}>
           <p className="text-[9px] font-mono tracking-wider uppercase text-slate-warm mb-1 px-1">

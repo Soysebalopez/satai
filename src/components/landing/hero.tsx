@@ -84,9 +84,12 @@ export function Hero() {
                   className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5"
                 />
               </Link>
-              <button className="flex items-center justify-center gap-2 rounded-xl border border-earth-deep px-6 py-3 text-sm font-medium text-ink-light transition-all duration-200 hover:border-ink-muted/30 hover:bg-earth-mid active:scale-[0.98]">
-                Suscribirse a alertas
-              </button>
+              <Link
+                href="/historial"
+                className="flex items-center justify-center gap-2 rounded-xl border border-earth-deep px-6 py-3 text-sm font-medium text-ink-light transition-all duration-200 hover:border-ink-muted/30 hover:bg-earth-mid active:scale-[0.98]"
+              >
+                Ver historial
+              </Link>
             </motion.div>
           </motion.div>
 

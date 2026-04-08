@@ -84,7 +84,7 @@ export function DataPanel({
   loading,
 }: DataPanelProps) {
   return (
-    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-72">
+    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-72 max-h-[calc(100dvh-80px)] overflow-y-auto scrollbar-hide">
       {/* AI Summary */}
       <CollapsibleCard title="Resumen ciudadano" accent="var(--color-teal-deep)">
         {aiSummary ? (

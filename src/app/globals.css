@@ -198,6 +198,15 @@
   100% { transform: rotate(360deg) scale(1.2); }
 }
 
+/* Hide scrollbar but allow scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 .contour-lines {
   background: conic-gradient(
     from 0deg,
