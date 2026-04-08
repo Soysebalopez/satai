@@ -50,19 +50,27 @@ export async function GET(request: NextRequest) {
 }
 
 async function tryOllamaVision(base64Image: string, layer: SatelliteLayer): Promise<string | null> {
+  const context = `CONTEXTO: Bahia Blanca es una ciudad costera del sur de Buenos Aires, Argentina.
+Al sur esta el polo petroquimico de Ingeniero White y la bahia. Al norte y oeste, campos agricolas de la pampa humeda.
+La ciudad tiene ~300.000 habitantes. El estuario de la bahia es zona de humedales.
+Es otono (abril) en el hemisferio sur.
+
+INSTRUCCION: Analiza la imagen satelital y responde en 2-3 oraciones CONCRETAS sobre lo que observas.
+NO describas la leyenda de colores. NO expliques que significa cada color.
+SI menciona zonas especificas (el puerto, la bahia, los campos al norte, el area urbana).
+SI da informacion util para un vecino de la ciudad.
+Responde directamente sin introduccion, en espanol.`;
+
   const prompts: Record<SatelliteLayer, string> = {
     trueColor:
-      "Esta es una imagen satelital Sentinel-2 en color real de Bahia Blanca, Argentina. " +
-      "Describe brevemente en 2-3 oraciones lo que se observa: areas urbanas, vegetacion, cuerpos de agua, " +
-      "la bahia, y cualquier cambio notable. Usa lenguaje simple para ciudadanos, en espanol.",
+      context + "\n\nEsta es una foto satelital real (Sentinel-2, color natural) de Bahia Blanca tomada recientemente. " +
+      "Que se observa? Hay nubes? Como se ve la bahia y la zona costera? Se nota actividad agricola en los campos?",
     ndvi:
-      "Esta es una imagen satelital NDVI (indice de vegetacion) de Bahia Blanca, Argentina. " +
-      "Los colores verdes oscuros indican vegetacion densa, verdes claros vegetacion moderada, " +
-      "marrones suelo desnudo, y azules agua. Describe en 2-3 oraciones el estado de la vegetacion. En espanol.",
+      context + "\n\nEste es un mapa de vegetacion (NDVI) de Bahia Blanca. Verde oscuro = vegetacion densa, verde claro = moderada, marron = suelo desnudo, azul = agua. " +
+      "Donde hay mas vegetacion y donde menos? Como estan los campos agricolas comparado con la zona urbana? La bahia y humedales se distinguen?",
     moisture:
-      "Esta es una imagen satelital de humedad del suelo (NDMI) de Bahia Blanca, Argentina. " +
-      "Azules indican alta humedad, amarillos moderada, rojos/naranjas sequedad. " +
-      "Describe en 2-3 oraciones las condiciones de humedad. En espanol.",
+      context + "\n\nEste es un mapa de humedad del suelo (NDMI) de Bahia Blanca. Azul = humedo, amarillo = moderado, rojo = seco. " +
+      "Que zonas estan mas secas y cuales mas humedas? Los campos necesitan lluvia? Como esta la zona de la bahia?",
   };
 
   try {
@@ -88,19 +96,20 @@ async function tryOllamaVision(base64Image: string, layer: SatelliteLayer): Prom
 }
 
 function getTemplateInterpretation(layer: SatelliteLayer): string {
+  const month = new Date().toLocaleString("es-AR", { month: "long" });
   const templates: Record<SatelliteLayer, string> = {
     trueColor:
-      "Imagen satelital de Bahia Blanca captada por Sentinel-2. Se observa el area urbana, " +
-      "la bahia hacia el sur, y las zonas rurales circundantes. " +
-      "Las areas verdes indican vegetacion activa en la periferia de la ciudad.",
+      `Imagen captada por Sentinel-2 en ${month}. Se distingue el area urbana de Bahia Blanca, ` +
+      "el estuario y puerto de Ingeniero White al sur, y los campos agricolas de la pampa al norte y oeste. " +
+      "La bahia y sus humedales son visibles en la zona costera.",
     ndvi:
-      "El analisis de vegetacion muestra las zonas verdes activas alrededor de Bahia Blanca. " +
-      "Las areas mas verdes corresponden a campos con cultivos o pasturas, " +
-      "mientras que el centro urbano y las zonas industriales aparecen con escasa vegetacion.",
+      `Mapa de vegetacion de ${month}. Los campos agricolas al norte y oeste de la ciudad muestran ` +
+      "la mayor actividad vegetal de la zona. El area urbana y el polo petroquimico de Ingeniero White " +
+      "presentan escasa vegetacion. Los humedales del estuario se distinguen como zona intermedia.",
     moisture:
-      "El mapa de humedad del suelo muestra las condiciones hidricas de la region. " +
-      "Las zonas cercanas a la bahia y cursos de agua presentan mayor humedad, " +
-      "mientras que las areas urbanas y caminos presentan condiciones secas.",
+      `Mapa de humedad del suelo de ${month}. La zona del estuario y la bahia presentan los niveles ` +
+      "mas altos de humedad. Los campos agricolas muestran condiciones variables segun el estado de los cultivos. " +
+      "El area urbana y las rutas aparecen como las zonas mas secas.",
   };
   return templates[layer];
 }

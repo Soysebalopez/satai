@@ -81,8 +81,21 @@ export function MapContainer() {
     satellite: false, ndvi: false, moisture: false,
   });
 
+  const SATELLITE_KEYS: LayerKey[] = ["satellite", "ndvi", "moisture"];
+
   const toggleLayer = useCallback((key: LayerKey) => {
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+    setLayers((prev) => {
+      const next = { ...prev };
+      // Satellite layers are mutually exclusive (radio behavior)
+      if (SATELLITE_KEYS.includes(key)) {
+        for (const k of SATELLITE_KEYS) {
+          next[k] = k === key ? !prev[key] : false;
+        }
+      } else {
+        next[key] = !prev[key];
+      }
+      return next;
+    });
   }, []);
 
   // Fetch all data
