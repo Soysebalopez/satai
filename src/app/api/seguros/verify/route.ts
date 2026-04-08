@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
+import { analyzeSARFlood } from "@/lib/sentinel-sar";
 
 /**
  * POST /api/seguros/verify
@@ -153,44 +154,57 @@ export async function POST(request: NextRequest) {
       warnings.push(`Area muy pequena (${totalHa} ha). Sentinel-2 tiene resolucion de 10m/pixel. Para inundaciones urbanas se recomienda un area de al menos 50 ha.`);
     }
 
-    // Fetch primary index (NDVI or NDWI)
-    const [indexBefore, indexAfter] = await Promise.all([
-      fetchIndexMean(token, bbox, beforeFrom, beforeTo, config.evalscript),
-      fetchIndexMean(token, bbox, afterFrom, afterTo, config.evalscript),
-    ]);
+    let damage: ReturnType<typeof calculateDamage>;
+    let indexBefore: { mean: number | null; validPixels: number; waterPixelPercent: number };
+    let indexAfter: typeof indexBefore;
+    let sarResult: Awaited<ReturnType<typeof analyzeSARFlood>> | null = null;
+    let displayIndexName = config.indexLabel;
 
-    // For inundaciones: also check NDVI drop as secondary evidence
-    // Flooded vegetation has NDVI near 0 or negative
-    let ndviBefore: { mean: number | null; validPixels: number } | null = null;
-    let ndviAfter: { mean: number | null; validPixels: number } | null = null;
     if (eventType === "inundacion") {
-      [ndviBefore, ndviAfter] = await Promise.all([
-        fetchIndexMean(token, bbox, beforeFrom, beforeTo, NDVI_ENCODED),
-        fetchIndexMean(token, bbox, afterFrom, afterTo, NDVI_ENCODED),
+      // PRIMARY: Sentinel-1 SAR radar — sees through clouds, detects water
+      sarResult = await analyzeSARFlood(bbox, eventDate);
+
+      damage = {
+        indexChange: sarResult.waterIncrease / 100,
+        damagePercent: sarResult.damagePercent,
+        affectedHa: Math.round(totalHa * (sarResult.damagePercent / 100)),
+        totalHa,
+        severity: sarResult.severity as "ninguno" | "leve" | "moderado" | "severo" | "total",
+        consistentWithEvent: sarResult.floodDetected,
+        waterDetected: sarResult.floodDetected,
+        waterPixelsBefore: sarResult.waterPercentBefore,
+        waterPixelsAfter: sarResult.waterPercentAfter,
+      };
+
+      displayIndexName = "SAR Radar";
+
+      // Also fetch optical NDWI for visual images (may have clouds but still useful)
+      [indexBefore, indexAfter] = await Promise.all([
+        fetchIndexMean(token, bbox, beforeFrom, beforeTo, config.evalscript),
+        fetchIndexMean(token, bbox, afterFrom, afterTo, config.evalscript),
       ]);
-    }
+    } else {
+      // Sentinel-2 optical for non-flood events
+      [indexBefore, indexAfter] = await Promise.all([
+        fetchIndexMean(token, bbox, beforeFrom, beforeTo, config.evalscript),
+        fetchIndexMean(token, bbox, afterFrom, afterTo, config.evalscript),
+      ]);
 
-    // Calculate damage — uses water pixel % for floods
-    const damage = calculateDamage(
-      indexBefore.mean, indexAfter.mean, eventType, bbox, config.index,
-      ndviBefore?.mean, ndviAfter?.mean,
-      indexBefore.waterPixelPercent, indexAfter.waterPixelPercent,
-    );
-
-    if (eventType === "inundacion" && !damage.consistentWithEvent && totalHa < 20) {
-      warnings.push("La deteccion puede ser imprecisa en zonas urbanas pequenas. Se recomienda ampliar el area de analisis o complementar con imagenes de radar SAR (Sentinel-1).");
+      damage = calculateDamage(
+        indexBefore.mean, indexAfter.mean, eventType, bbox, config.index,
+      );
     }
 
     const summary = await generateVerification({
       fieldName: fieldName || "Campo declarado",
       eventType,
       eventDate,
-      indexName: config.indexLabel,
-      indexBefore: indexBefore.mean,
-      indexAfter: indexAfter.mean,
+      indexName: displayIndexName,
+      indexBefore: sarResult ? sarResult.waterPercentBefore : indexBefore.mean,
+      indexAfter: sarResult ? sarResult.waterPercentAfter : indexAfter.mean,
       damagePercent: damage.damagePercent,
       affectedHa: damage.affectedHa,
-      waterDetected: damage.waterDetected,
+      waterDetected: damage.waterDetected ?? false,
       warnings,
     });
 
@@ -201,25 +215,25 @@ export async function POST(request: NextRequest) {
         eventType,
         eventDate,
         bbox,
-        indexUsed: config.indexLabel,
+        indexUsed: eventType === "inundacion" ? "Sentinel-1 SAR (radar)" : config.indexLabel,
         verifiedAt: new Date().toISOString(),
         dataSource: "ESA Copernicus Sentinel-2 L2A",
       },
       before: {
         period: { from: formatDate(beforeFrom), to: formatDate(beforeTo) },
-        indexMean: indexBefore.mean,
-        indexName: config.indexLabel,
+        indexMean: sarResult ? sarResult.waterPercentBefore : indexBefore.mean,
+        indexName: sarResult ? "Agua (SAR %)" : config.indexLabel,
         validPixels: indexBefore.validPixels,
-        waterPixelPercent: indexBefore.waterPixelPercent,
-        imageUrl: `/api/seguros/verify/image?bbox=${bbox.join(",")}&from=${formatDate(beforeFrom)}&to=${formatDate(beforeTo)}&type=${eventType}`,
+        waterPixelPercent: sarResult ? sarResult.waterPercentBefore : indexBefore.waterPixelPercent,
+        imageUrl: `/api/seguros/verify/image?bbox=${bbox.join(",")}&from=${formatDate(beforeFrom)}&to=${formatDate(beforeTo)}&type=${eventType}&sensor=${eventType === "inundacion" ? "sar" : "s2"}`,
       },
       after: {
         period: { from: formatDate(afterFrom), to: formatDate(afterTo) },
-        indexMean: indexAfter.mean,
-        indexName: config.indexLabel,
+        indexMean: sarResult ? sarResult.waterPercentAfter : indexAfter.mean,
+        indexName: sarResult ? "Agua (SAR %)" : config.indexLabel,
         validPixels: indexAfter.validPixels,
-        waterPixelPercent: indexAfter.waterPixelPercent,
-        imageUrl: `/api/seguros/verify/image?bbox=${bbox.join(",")}&from=${formatDate(afterFrom)}&to=${formatDate(afterTo)}&type=${eventType}`,
+        waterPixelPercent: sarResult ? sarResult.waterPercentAfter : indexAfter.waterPixelPercent,
+        imageUrl: `/api/seguros/verify/image?bbox=${bbox.join(",")}&from=${formatDate(afterFrom)}&to=${formatDate(afterTo)}&type=${eventType}&sensor=${eventType === "inundacion" ? "sar" : "s2"}`,
       },
       damage: {
         indexChange: damage.indexChange,
@@ -231,8 +245,8 @@ export async function POST(request: NextRequest) {
         waterDetected: damage.waterDetected,
         waterPixelsBefore: damage.waterPixelsBefore || 0,
         waterPixelsAfter: damage.waterPixelsAfter || 0,
-        methodology: eventType === "inundacion"
-          ? `Conteo de pixeles con agua (NDWI > 0.1): antes ${indexBefore.waterPixelPercent}%, despues ${indexAfter.waterPixelPercent}%. Complementado con analisis NDVI.`
+        methodology: eventType === "inundacion" && sarResult
+          ? `Sentinel-1 SAR (radar, ve a traves de nubes). Pixeles con agua: antes ${sarResult.waterPercentBefore}%, despues ${sarResult.waterPercentAfter}%. Incremento: ${sarResult.waterIncrease}%.`
           : "Comparacion de NDVI pre/post evento. Reduccion indica perdida de cobertura vegetal.",
       },
       summary,

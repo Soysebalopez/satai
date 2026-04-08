@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchSARFloodImage } from "@/lib/sentinel-sar";
 
 /**
  * GET /api/seguros/verify/image?bbox=...&from=...&to=...&type=inundacion
@@ -66,6 +67,25 @@ export async function GET(request: NextRequest) {
   }
 
   const bbox = bboxStr.split(",").map(Number);
+  const sensor = params.get("sensor") || "s2";
+
+  // Use SAR for flood images
+  if (sensor === "sar") {
+    try {
+      const buffer = await fetchSARFloodImage(
+        bbox as [number, number, number, number],
+        from + "T00:00:00Z",
+        to + "T23:59:59Z",
+      );
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" },
+      });
+    } catch (error) {
+      console.error("SAR image error:", error);
+      return NextResponse.json({ error: "No se pudo obtener imagen SAR" }, { status: 502 });
+    }
+  }
+
   const evalscript = eventType === "inundacion" ? FLOOD_VISUAL : NDVI_VISUAL;
 
   try {
