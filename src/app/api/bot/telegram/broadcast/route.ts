@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { ZONES } from "@/lib/zones";
 
 /**
@@ -148,7 +148,7 @@ async function handleDailyBulletin(origin: string) {
 
 /** Fire alerts → affected zone subscribers */
 async function handleFireAlerts(origin: string) {
-  const { data: subs } = await supabase
+  const { data: subs } = await getSupabase()
     .from("subscriptions")
     .select("chat_id, zone_id, zone_name");
 
@@ -182,7 +182,7 @@ async function handleFireAlerts(origin: string) {
 
     for (const sub of subscribers) {
       // Check if already alerted
-      const { data: existing } = await supabase
+      const { data: existing } = await getSupabase()
         .from("alerted_fires")
         .select("id")
         .eq("fire_key", fireKey)
@@ -202,7 +202,7 @@ async function handleFireAlerts(origin: string) {
       await sendToChat(sub.chat_id, message);
 
       // Mark as alerted
-      await supabase.from("alerted_fires").insert({ fire_key: fireKey, chat_id: sub.chat_id });
+      await getSupabase().from("alerted_fires").insert({ fire_key: fireKey, chat_id: sub.chat_id });
 
       totalSent++;
     }
@@ -230,7 +230,7 @@ async function handleWeeklySummary(origin: string) {
   await sendToChannel(message);
 
   // Send to all subscribers
-  const { data: subs } = await supabase
+  const { data: subs } = await getSupabase()
     .from("subscriptions")
     .select("chat_id");
 

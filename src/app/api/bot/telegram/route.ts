@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { ZONES } from "@/lib/zones";
 
 /**
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
           `No encontre el barrio "${zoneInput}".\nUsa /barrios para ver la lista.`
         );
       } else {
-        const { error } = await supabase
+        const { error } = await getSupabase()
           .from("subscriptions")
           .upsert(
             { chat_id: chatId, zone_id: zone.id, zone_name: zone.name },
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       }
 
     } else if (text === "/mis_alertas") {
-      const { data: subs, error } = await supabase
+      const { data: subs, error } = await getSupabase()
         .from("subscriptions")
         .select("zone_name")
         .eq("chat_id", chatId);
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
       if (!zone) {
         await sendMessage(chatId, `No encontre el barrio "${zoneInput}".`);
       } else {
-        const { error } = await supabase
+        const { error } = await getSupabase()
           .from("subscriptions")
           .delete()
           .eq("chat_id", chatId)
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       }
 
     } else if (text === "/cancelar_todo") {
-      await supabase.from("subscriptions").delete().eq("chat_id", chatId);
+      await getSupabase().from("subscriptions").delete().eq("chat_id", chatId);
       await sendMessage(chatId, "Cancelaste todas tus suscripciones.");
 
     } else {
