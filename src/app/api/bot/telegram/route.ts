@@ -39,10 +39,13 @@ export async function POST(request: NextRequest) {
   try {
     if (text === "/start" || text === "/help") {
       reply = "MonitorBB — Monitoreo ambiental de Bahia Blanca\n\n" +
+        "Comandos:\n" +
         "/aire — Calidad del aire actual\n" +
         "/viento — Viento y dispersion\n" +
         "/incendios — Focos de calor activos\n" +
         "/resumen — Resumen ciudadano con IA\n\n" +
+        "Para recibir alertas automaticas, unite al canal:\n" +
+        "t.me/MonitorBBalertas\n\n" +
         "Datos: ESA Copernicus / NASA FIRMS / Open-Meteo";
 
     } else if (text === "/aire") {
